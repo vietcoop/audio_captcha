@@ -1,0 +1,129 @@
+<?php
+
+require_once 'Vc_Audio.php';
+define ('ALLOWED_CHARS', '0123456789acdefghijkmopqrstuvwxyACDEFGHJKLMOPQRSTUVWXY');
+define ('CODE_LENGTH', '5');
+
+/**
+ * Implements hook_vc_api().
+ */
+function audio_captcha_vc_api() {
+  return array('api' => '1.0');
+}
+
+
+/**
+ * Implements hook_captcha().
+ */
+function audio_captcha_captcha($op, $captcha_type = '', $captcha_sid = NULL) {
+  switch ($op) {
+    case 'list':
+      return array('audio_captcha');
+    case 'generate':
+       if ($captcha_type == 'audio_captcha') {
+         
+        global $user;
+        if (variable_get('maintenance_mode', 0) && $user->uid == 0) {
+          return captcha_captcha('generate', 'Math');
+        }
+        
+        $allowed_chars = str_split(constant('ALLOWED_CHARS'));
+        $code_length = constant('CODE_LENGTH');
+        $code = '';
+        
+        for ($i = 0; $i < $code_length; $i++) {
+          $code .= $allowed_chars[array_rand($allowed_chars)];
+        }
+
+        // build the result to return
+        $result = array();
+        $result['solution'] = $code;
+        
+        $result['form']['captcha_response'] = array(
+          '#type' => 'textfield',
+          '#title' => t('What code is in the audio?'),
+          '#description' => t('Enter the characters shown in the audio.'),
+          '#weight' => 0,
+          '#required' => TRUE,
+          '#size' => 15,
+        );
+
+        $vcaudio = new Vc_Audio();  
+       
+        $vcaudio->setCode($code);
+        
+        $vcaudio->setSid($captcha_sid);
+        
+        $str = $vcaudio->buildAudioCode();
+        global $base_path;
+        $flash_file =  $base_path .  drupal_get_path('module', 'audio_captcha') . '/voice.swf';
+        
+        $folder_name = file_public_path_vcaudio();
+        
+        $mp3_file = $base_path . $folder_name . "/{$captcha_sid}.mp3";
+        
+        $html = '<object width="50" height="57" title="sample">';
+        $html .= "<param name='movie' value='{$flash_file}' />";
+        $html .= "<param name='flashvars' value='var1={$mp3_file}' />";
+        $html .= "<embed src='{$flash_file}' quality='high'";
+        $html .= 'pluginspage="http://www.adobe.com/shockwave/download/download.cgi?P1_Prod_Version=ShockwaveFlash"';
+        $html .= 'type="application/x-shockwave-flash" width="50" height="57"';
+        $html .= "flashvars='var1={$mp3_file}' ></embed></object>";
+       
+        $result['form']['vc_audio'] = array(
+          '#type' => 'markup',
+          '#markup' => $html,
+        );
+
+        // Handle the case insensitive validation option combined with ignoring spaces.
+        switch (variable_get('captcha_default_validation', CAPTCHA_DEFAULT_VALIDATION_CASE_INSENSITIVE)) {
+          case CAPTCHA_DEFAULT_VALIDATION_CASE_SENSITIVE:
+            $result['captcha_validate'] = 'captcha_validate_ignore_spaces';
+            break;
+          case CAPTCHA_DEFAULT_VALIDATION_CASE_INSENSITIVE:
+            $result['captcha_validate'] = 'captcha_validate_case_insensitive_ignore_spaces';
+            break;
+        }
+
+        return $result;
+      }
+      break;
+  }
+} 
+
+ /**
+  * Implements hook_cron_queue_info().
+  */
+ function audio_captcha_cron_queue_info() { 
+    $queues['item_queue_vcaudio'] = array(
+      'worker callback' => 'item_queue_run_vcaudio',
+      'time' => 5,
+    );
+    return $queues;
+ }
+         
+/**
+ * Implements hook_cron().
+ */
+function audio_captcha_cron() {
+  
+  $folder_name = file_public_path_vcaudio();
+  
+  $check_folder = file_prepare_directory($folder_name);
+  if ($check_folder) {
+    $files = file_scan_directory($folder_name, '/.*.mp3/');
+  }
+  $queue = DrupalQueue::get('item_queue_vcaudio');
+  foreach ($files as $file) {
+     $queue->createItem($file);
+  }
+}
+
+function item_queue_run_vcaudio($file) {
+   $check_delete = unlink($file->uri);
+}
+
+function file_public_path_vcaudio(){
+  global $conf;
+  return $conf['file_public_path'] . '/vcaudio';// DRUPAL_ROOT . '/' . 
+}

@@ -1,0 +1,14 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function audio_captcha_install() { 
+    $folder_name = file_public_path_vcaudio();
+    $check_folder = file_prepare_directory($folder_name);
+    if(empty($check_folder)) {
+        if (!@drupal_mkdir($folder_name, 0777)) {
+           drupal_set_message('Do not create folder vcaudio');
+        }
+    }
+}

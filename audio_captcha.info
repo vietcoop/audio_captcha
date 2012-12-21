@@ -1,0 +1,6 @@
+name = Audio Captcha
+description = Vc_Audio_Catcha
+package = Custom Module
+core = 7.x
+files[] = audio_captcha.module
+dependencies[] = captcha
